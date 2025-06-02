@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include "event.h"
 #include "block_revsh.skel.h"
+
 static volatile bool exiting = true;
 static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
 {
@@ -23,7 +24,7 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
     inet_ntop(AF_INET, &addr, ip_str, sizeof(ip_str));
     printf("[!] Suspicious connect attempt: PID=%u, COMM=%.16s, DEST=%s:%u, LOCAL_PORT=%u\n",
            evt->pid, evt->comm, ip_str, evt->dport, evt->sport);
-    if (evt->sport == 0 || evt->sport > 1000) {
+    if ((evt->sport == 0 || evt->sport > 1024) && evt->dport > 1024) {
         char exe_link_path[PATH_MAX];
         char exe_real_path[PATH_MAX] = {0};
         ssize_t len;
@@ -38,17 +39,22 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
                    pid, strerror(errno));
         }
         if (exe_real_path[0] != '\0') {
-            struct stat st;
-            if (stat(exe_real_path, &st) == 0) {
-                if (unlink(exe_real_path) == 0) {
-                    printf("    -> Deleted executable: %s\n", exe_real_path);
+            if (strncmp(exe_real_path, "/usr/bin/", 9) == 0) {
+                printf("    -> Whitelisted path (in /usr/bin), skip delete: %s\n",
+                       exe_real_path);
+            } else {
+                struct stat st;
+                if (stat(exe_real_path, &st) == 0) {
+                    if (unlink(exe_real_path) == 0) {
+                        printf("    -> Deleted executable: %s\n", exe_real_path);
+                    } else {
+                        printf("    -> Failed to delete %s: %s\n",
+                               exe_real_path, strerror(errno));
+                    }
                 } else {
-                    printf("    -> Failed to delete %s: %s\n",
+                    printf("    -> Stat failed on %s: %s\n",
                            exe_real_path, strerror(errno));
                 }
-            } else {
-                printf("    -> Stat failed on %s: %s\n",
-                       exe_real_path, strerror(errno));
             }
         }
         printf("    -> Killing PID %u (sport=%u)\n", pid, evt->sport);
@@ -57,14 +63,17 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
         }
     }
 }
+
 static void handle_lost_events(void *ctx, int cpu, __u64 lost_cnt)
 {
     fprintf(stderr, "WARNING: Lost %llu events on CPU %d\n", lost_cnt, cpu);
 }
+
 static void sig_handler(int sig)
 {
     exiting = false;
 }
+
 int main(int argc, char **argv)
 {
     struct block_revsh_bpf *skel = NULL;
@@ -73,6 +82,7 @@ int main(int argc, char **argv)
 
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
+
     skel = block_revsh_bpf__open();
     if (!skel) {
         fprintf(stderr, "ERROR: failed to open BPF skeleton\n");
@@ -89,6 +99,7 @@ int main(int argc, char **argv)
         goto cleanup;
     }
     printf("Monitoring suspicious outbound connections via LSM... Press Ctrl+C to exit.\n");
+
     events_map_fd = bpf_map__fd(skel->maps.events);
     pb = perf_buffer__new(
         events_map_fd,
@@ -110,6 +121,7 @@ int main(int argc, char **argv)
             break;
         }
     }
+
 cleanup:
     perf_buffer__free(pb);
     block_revsh_bpf__destroy(skel);
