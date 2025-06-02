@@ -48,7 +48,7 @@ $(chkRaW_BPF_OBJ): $(chkRaW_BPF_SRC)
 $(chkRaW_SKEL_HDR): $(chkRaW_BPF_OBJ)
         @echo ">>> [chkRaW] Generating skeleton header: $@"
         bpftool gen skeleton $(chkRaW_BPF_OBJ) > $(chkRaW_SKEL_HDR)
-10;rgb:cccc/cccc/cccc
+
 $(chkRaW_LOADER_BIN): $(chkRaW_LOADER_SR) $(chkRaW_SKEL_HDR)
         @echo ">>> [chkRaW] Compiling loader: $<"
         gcc $(USER_CFLAGS) $< -o $@ -IchkRaW $(LDLIBS)
