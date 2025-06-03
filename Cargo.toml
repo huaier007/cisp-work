@@ -1,3 +1,0 @@
-[workspace]
-members = ["cli", "gui/src-tauri/", "core"]
-resolver = "2"
