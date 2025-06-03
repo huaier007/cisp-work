@@ -40,7 +40,7 @@ static void handle_event(void *ctx, int cpu, void *data, __u32 data_sz)
         if (exe_real_path[0] != '\0') {
             struct stat st;
             if (stat(exe_real_path, &st) == 0) {
-                if (unlink(exe_real_path) == 0) {
+                if (/* unlink(exe_real_path) == 0 */ false) {
                     printf("    -> Deleted executable: %s\n", exe_real_path);
                 } else {
                     printf("    -> Failed to delete %s: %s\n",
