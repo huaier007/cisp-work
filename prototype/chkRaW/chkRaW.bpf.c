@@ -6,24 +6,37 @@
 
 char LICENSE[] SEC("license") = "GPL";
 
+static __always_inline bool is_sshd(void)
+{
+    char comm[TASK_COMM_LEN] = {};
+    bpf_get_current_comm(&comm, sizeof(comm));
+    if (comm[0] == 's' && comm[1] == 's' && comm[2] == 'h' && comm[3] == 'd')
+        return true;
+    return false;
+}
+
 SEC("lsm/file_open")
 int BPF_PROG(deny_open_shadow, struct file *file)
 {
-    struct path *p = &file->f_path;
-    struct dentry *d = p->dentry;
-    char name[64];
-    bpf_core_read_str(name, sizeof(name), d->d_name.name);
-    if (__builtin_strcmp(name, "shadow") == 0) {
-        struct path *parent_path = &p->mnt->mnt_root;
-        bpf_printk("deny open /etc/shadow\n");
+    struct dentry *d = (struct dentry *)BPF_CORE_READ(file, f_path.dentry);
+    if (!d)
+        return 0;
+    char fname[16] = {};
+    const char *name_ptr = (const char *)BPF_CORE_READ(d, d_name.name);
+    bpf_core_read_str(fname, sizeof(fname), name_ptr);
+    if (__builtin_strcmp(fname, "shadow") != 0)
+        return 0;
+    struct dentry *parent = (struct dentry *)BPF_CORE_READ(d, d_parent);
+    if (!parent)
+        return 0;
+    char parent_name[16] = {};
+    const char *parent_ptr = (const char *)BPF_CORE_READ(parent, d_name.name);
+    bpf_core_read_str(parent_name, sizeof(parent_name), parent_ptr);
+    if (__builtin_strcmp(parent_name, "etc") != 0)
+        return 0;
+    if (!is_sshd()) {
+        bpf_printk("deny_open_shadow: blocked /etc/shadow by non-sshd task\n");
         return -EPERM;
     }
-    return 0;
-}
-SEC("lsm/inode_permission")
-int BPF_PROG(deny_perm_shadow, struct inode *inode, int mask)
-{
-    char path_name[64];
-    bpf_core_read_str(path_name, sizeof(path_name), inode->i_sb->s_id);
     return 0;
 }
