@@ -4,3 +4,8 @@
 
 **/node_modules
 **/target
+
+**/*.o
+**/*.skel.h
+**/vmlinux.h
+**/loader
